@@ -12,6 +12,7 @@
     proxyBase: 'https://cors-proxy.websolutionsbd-info.workers.dev/?url='
   };
 
+
   // === DOMAIN WHITELIST ===
   var isAuthorized = false;
   for (var hi = 0; hi < CONFIG.allowedHosts.length; hi++) {

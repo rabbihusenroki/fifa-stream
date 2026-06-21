@@ -37,10 +37,12 @@
       }
     }
   });
-  setInterval(function(){
-    if (window.outerWidth - window.innerWidth > 180 || window.outerHeight - window.innerHeight > 180) {
+  // DevTools detection disabled to prevent refresh loop
+setInterval(function(){
+    if (window.outerWidth - window.innerWidth > 180 ||
+        window.outerHeight - window.innerHeight > 180) {
+      // Just blur, no reload (was causing refresh loop)
       document.body.style.filter = 'blur(20px)';
-      setTimeout(function(){ location.reload(); }, 1500);
     }
   }, 800);
 
@@ -369,8 +371,16 @@
 
   function boot() {
     setupChannelTabs();
-    fetchData();
-    setInterval(fetchData, CONFIG.refreshInterval);
+    // Force fresh fetch with cache busting
+    fetch(CONFIG.matchesJsonUrl + '&init=' + Math.random())
+      .then(function(r){ return r.json(); })
+      .then(function(data){ window._fifaData = data; if (data.streams) window._fifaStreams = data.streams; })
+      .catch(function(){});
+    // Then start regular polling
+    setTimeout(function(){
+      fetchData();
+      setInterval(fetchData, CONFIG.refreshInterval);
+    }, 1000);
   }
 
   if (document.readyState === 'loading') {

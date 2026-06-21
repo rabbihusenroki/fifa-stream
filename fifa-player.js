@@ -14,7 +14,7 @@
   'use strict';
 
   var CONFIG = {
-    matchesJsonUrl: 'https://cdn.jsdelivr.net/gh/USERNAME/fifa-stream@main/matches.json',
+    matchesJsonUrl: 'https://cdn.jsdelivr.net/gh/rabbihusenroki/fifa-stream@master/matches.json',
     refreshInterval: 30000,
     allowedHosts: ['fifalivehdstream.blogspot.com', 'www.fifalivehdstream.blogspot.com'],
     defaultStream: 1

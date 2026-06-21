@@ -67,7 +67,12 @@
         lowLatencyMode: true,
         maxBufferLength: 30,
         enableWorker: true,
-        proxy: 'https://cors-proxy.websolutionsbd-info.workers.dev/?url='
+        xhrSetup: function(xhr, url) {
+          // Route ALL segment requests through CORS proxy
+          if (url.indexOf('http') === 0 && url.indexOf('cors-proxy') === -1) {
+            xhr.open('GET', 'https://cors-proxy.websolutionsbd-info.workers.dev/?url=' + encodeURIComponent(url), true);
+          }
+        }
       });
       hlsInstance.loadSource(url);
       hlsInstance.attachMedia(video);

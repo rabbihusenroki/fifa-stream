@@ -1,15 +1,6 @@
 // =====================================================
 // FIFA LIVE - SMART SCHEDULE WITH DUAL TIMEZONE
 // =====================================================
-// Features:
-//   - Filters by LOCAL date (user's viewing perspective)
-//   - Detects LIVE match by UTC time (match actual play)
-//   - Displays in user's local timezone (BST)
-//   - Auto-refresh every 30 seconds
-//
-// Host: https://cdn.jsdelivr.net/gh/YOUR_USERNAME/fifa-stream@main/fifa-player.js
-// Data: https://cdn.jsdelivr.net/gh/YOUR_USERNAME/fifa-stream@main/matches.json
-
 (function(){
   'use strict';
 
@@ -95,7 +86,7 @@
     }
   }
 
-  // === TIME HELPERS (LOCAL TIME = Asia/Dhaka BST UTC+6) ===
+  // === TIME HELPERS ===
   function todayLocalStr() {
     var d = new Date();
     var offset = 6 * 60;
@@ -137,7 +128,7 @@
     return e;
   }
 
-  // === RENDER: LIVE MATCH (Hero Section) ===
+  // === RENDER: LIVE MATCH ===
   function renderLiveMatch(data, match) {
     var container = document.getElementById('fifa-live-match-container');
     if (!container) return;
@@ -184,7 +175,7 @@
     ]));
   }
 
-  // === RENDER: TODAY'S MATCHES (Filtered by LOCAL date) ===
+  // === RENDER: TODAY'S MATCHES ===
   function renderTodaysMatches(data, todayMatches, liveMatchId) {
     var container = document.getElementById('fifa-today-matches-container');
     if (!container) return;
@@ -286,9 +277,7 @@
   }
 
   // === DETECT LIVE MATCH ===
-  // Uses UTC time for actual match playing
   function determineLiveMatch(data) {
-    // 1. Manual override from JSON
     if (data.liveStream && data.liveStream.matchId) {
       var manual = (data.matches || []).filter(function(m){ return m.id === data.liveStream.matchId; })[0];
       if (manual) {
@@ -297,13 +286,11 @@
       }
     }
 
-    // 2. Auto-detect from UTC time (current time falls within match window)
     var now = nowUtcMinutes();
     var allMatches = data.matches || [];
     for (var i = 0; i < allMatches.length; i++) {
       var m = allMatches[i];
       if (!m.utcDate || !m.utcTime) continue;
-      // Get today's UTC date
       var todayUtc = new Date().toISOString().split('T')[0];
       if (m.utcDate !== todayUtc) continue;
       var matchTime = timeToMin(m.utcTime);
@@ -315,7 +302,6 @@
     return null;
   }
 
-  // === BUILD TICKER (Dynamic based on today's matches) ===
   function buildTicker(data, todayMatches, liveMatch) {
     var items = [];
     var now = nowUtcMinutes();
@@ -356,30 +342,23 @@
         window._fifaData = data;
         if (data.streams) window._fifaStreams = data.streams;
 
-        // Get TODAY (user's local timezone) — Bangladesh perspective
         var today = todayLocalStr();
 
-        // Filter today's matches by LOCAL date (user's viewing perspective)
         var todayMatches = (data.matches || []).filter(function(m){ return m.localDate === today; });
 
-        // Sort by local time
         todayMatches.sort(function(a, b){ return timeToMin(a.localTime) - timeToMin(b.localTime); });
 
-        // Determine live match using UTC time
         var liveMatch = determineLiveMatch(data);
         var liveMatchId = liveMatch ? liveMatch.id : null;
 
-        // Build ticker
         var tickerItems = buildTicker(data, todayMatches, liveMatch);
 
-        // Render everything
         renderTicker(tickerItems);
         renderLiveMatch(data, liveMatch);
         renderTodaysMatches(data, todayMatches, liveMatchId);
         renderPopularLeagues(data);
         renderStats(data.siteStats);
 
-        // Auto-load stream if a live match exists
         if (liveMatch && !video.src && !hlsInstance) {
           var streamNum = (data.liveStream && data.liveStream.streamNumber) || CONFIG.defaultStream;
           loadStream(streamNum);
@@ -388,7 +367,6 @@
       .catch(function(err){ console.warn('Failed to load data:', err); });
   }
 
-  // === BOOT ===
   function boot() {
     setupChannelTabs();
     fetchData();

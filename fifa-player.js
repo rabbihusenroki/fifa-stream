@@ -5,7 +5,7 @@
   'use strict';
 
   var CONFIG = {
-    matchesJsonUrl: 'https://cdn.jsdelivr.net/gh/rabbihusenroki/fifa-stream@master/matches.json?v=' + Date.now(),
+    matchesJsonUrl: 'https://cdn.jsdelivr.net/gh/rabbihusenroki/fifa-stream@main/matches.json',
     refreshInterval: 30000,
     allowedHosts: ['fifalivehdstream.blogspot.com', 'www.fifalivehdstream.blogspot.com'],
     defaultStream: 1
@@ -37,12 +37,10 @@
       }
     }
   });
-  // DevTools detection disabled to prevent refresh loop
-setInterval(function(){
-    if (window.outerWidth - window.innerWidth > 180 ||
-        window.outerHeight - window.innerHeight > 180) {
-      // Just blur, no reload (was causing refresh loop)
+  setInterval(function(){
+    if (window.outerWidth - window.innerWidth > 180 || window.outerHeight - window.innerHeight > 180) {
       document.body.style.filter = 'blur(20px)';
+      setTimeout(function(){ location.reload(); }, 1500);
     }
   }, 800);
 
@@ -371,16 +369,8 @@ setInterval(function(){
 
   function boot() {
     setupChannelTabs();
-    // Force fresh fetch with cache busting
-    fetch(CONFIG.matchesJsonUrl + '&init=' + Math.random())
-      .then(function(r){ return r.json(); })
-      .then(function(data){ window._fifaData = data; if (data.streams) window._fifaStreams = data.streams; })
-      .catch(function(){});
-    // Then start regular polling
-    setTimeout(function(){
-      fetchData();
-      setInterval(fetchData, CONFIG.refreshInterval);
-    }, 1000);
+    fetchData();
+    setInterval(fetchData, CONFIG.refreshInterval);
   }
 
   if (document.readyState === 'loading') {

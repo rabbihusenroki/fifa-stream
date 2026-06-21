@@ -1,14 +1,15 @@
 // =====================================================
-// FIFA LIVE - SMART SCHEDULE WITH DUAL TIMEZONE
+// FIFA LIVE - BROWSER-SIDE M3U8 REWRITER (FINAL VERSION)
 // =====================================================
 (function(){
   'use strict';
 
   var CONFIG = {
     matchesJsonUrl: 'https://cdn.jsdelivr.net/gh/rabbihusenroki/fifa-stream@master/matches.json',
-    refreshInterval: 30000,
+    refreshInterval: 60000,
     allowedHosts: ['fifalivehdstream.blogspot.com', 'www.fifalivehdstream.blogspot.com'],
-    defaultStream: 1
+    defaultStream: 1,
+    proxyBase: 'https://cors-proxy.websolutionsbd-info.workers.dev/?url='
   };
 
   // === DOMAIN WHITELIST ===
@@ -38,61 +39,132 @@
     }
   });
   setInterval(function(){
-    if (window.outerWidth - window.innerWidth > 180 || window.outerHeight - window.innerHeight > 180) {
-      document.body.style.filter = 'blur(20px)';
-      setTimeout(function(){ location.reload(); }, 1500);
+    if (window.outerWidth - window.innerWidth > 250 || window.outerHeight - window.innerHeight > 250) {
+      console.warn('DevTools detected.');
     }
-  }, 800);
+  }, 2000);
 
-  // === HLS PLAYER ===
+  // === HLS PLAYER SETUP ===
   var video = document.getElementById('fifa-video');
   var loader = document.getElementById('fifa-loading');
   var hlsInstance = null;
+  var currentBlobUrl = null;
 
   function hideLoader() { if (loader) loader.style.display = 'none'; }
 
+  // === STREAM LOADER WITH M3U8 REWRITER ===
   function loadStream(channel) {
-    var url = (window._fifaStreams && window._fifaStreams[channel]) ||
-              (window._fifaStreams && window._fifaStreams[String(CONFIG.defaultStream)]);
-    if (!url) {
-      url = (window._fifaData && window._fifaData.streams && window._fifaData.streams[String(channel)]);
+    var originalUrl = (window._fifaStreams && window._fifaStreams[channel]) ||
+                      (window._fifaStreams && window._fifaStreams[String(CONFIG.defaultStream)]);
+    if (!originalUrl) {
+      originalUrl = (window._fifaData && window._fifaData.streams && window._fifaData.streams[String(channel)]);
     }
-    if (!url) return;
+    if (!originalUrl) {
+      console.warn('No stream URL found');
+      return;
+    }
+
+    console.log('Loading stream:', originalUrl);
     loader.style.display = 'flex';
+
+    // Cleanup
     if (hlsInstance) { try { hlsInstance.destroy(); } catch(e){} hlsInstance = null; }
+    if (currentBlobUrl) { URL.revokeObjectURL(currentBlobUrl); currentBlobUrl = null; }
     video.removeAttribute('src');
     video.load();
-    if (window.Hls && Hls.isSupported()) {
-      hlsInstance = new Hls({
-        lowLatencyMode: true,
-        maxBufferLength: 30,
-        enableWorker: true,
-        xhrSetup: function(xhr, url) {
-          // Route ALL segment requests through CORS proxy
-          if (url.indexOf('http') === 0 && url.indexOf('cors-proxy') === -1) {
-            xhr.open('GET', 'https://cors-proxy.websolutionsbd-info.workers.dev/?url=' + encodeURIComponent(url), true);
+
+    loadStreamViaProxy(originalUrl);
+  }
+
+  async function loadStreamViaProxy(originalUrl) {
+    try {
+      var proxiedM3u8Url = CONFIG.proxyBase + encodeURIComponent(originalUrl);
+      console.log('Fetching m3u8 via proxy...');
+      
+      var response = await fetch(proxiedM3u8Url);
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      var m3u8Text = await response.text();
+      
+      // Rewrite segment URLs
+      var baseUrl = originalUrl.substring(0, originalUrl.lastIndexOf('/') + 1);
+      var lines = m3u8Text.split('\n');
+      var newLines = [];
+      
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim();
+        
+        if (line === '' || (line.charAt(0) === '#' && line.indexOf('URI=') < 0)) {
+          newLines.push(line);
+          continue;
+        }
+        
+        // Handle URI= attributes
+        if (line.indexOf('URI=') > -1) {
+          var updated = line.replace(/URI="([^"]+)"/g, function(m, u) {
+            if (u.indexOf('http') !== 0) u = baseUrl + u;
+            return 'URI="' + CONFIG.proxyBase + encodeURIComponent(u) + '"';
+          });
+          newLines.push(updated);
+          continue;
+        }
+        
+        // Handle URL lines
+        if (line.indexOf('http') === 0 || line.charAt(0) === '/') {
+          var segUrl = line;
+          if (segUrl.charAt(0) === '/') {
+            var baseOrigin = new URL(originalUrl);
+            segUrl = baseOrigin.origin + segUrl;
+          } else if (segUrl.indexOf('http') !== 0) {
+            segUrl = baseUrl + segUrl;
           }
+          newLines.push(CONFIG.proxyBase + encodeURIComponent(segUrl));
+          continue;
         }
-      });
-      hlsInstance.loadSource(url);
-      hlsInstance.attachMedia(video);
-      hlsInstance.on(Hls.Events.MANIFEST_PARSED, function(){
-        var p = video.play(); if (p) { p.then(hideLoader).catch(hideLoader); } else hideLoader();
-      });
-      hlsInstance.on(Hls.Events.ERROR, function(e, d){
-        if (d.fatal) {
-          if (d.type === Hls.ErrorTypes.NETWORK_ERROR) try { hlsInstance.startLoad(); } catch(e){}
-          else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) try { hlsInstance.recoverMediaError(); } catch(e){}
-          else { try { hlsInstance.destroy(); } catch(e){} hideLoader(); }
-        }
-      });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = url;
-      video.addEventListener('loadedmetadata', function(){
-        var p = video.play(); if (p) { p.then(hideLoader).catch(hideLoader); } else hideLoader();
-      });
-    } else {
-      document.body.innerHTML = '<div style="color:#fff;background:#000;height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;font-size:18px;padding:20px;">BROWSER NOT SUPPORTED</div>';
+        
+        newLines.push(line);
+      }
+      
+      var rewrittenM3u8 = newLines.join('\n');
+      console.log('M3U8 rewritten, total lines:', newLines.length);
+      
+      // Create Blob URL
+      var blob = new Blob([rewrittenM3u8], { type: 'application/vnd.apple.mpegurl' });
+      currentBlobUrl = URL.createObjectURL(blob);
+      console.log('Blob URL created');
+      
+      // Load HLS.js with Blob URL
+      if (window.Hls && Hls.isSupported()) {
+        hlsInstance = new Hls({
+          lowLatencyMode: true,
+          maxBufferLength: 30,
+          enableWorker: false
+        });
+        hlsInstance.loadSource(currentBlobUrl);
+        hlsInstance.attachMedia(video);
+        hlsInstance.on(Hls.Events.MANIFEST_PARSED, function() {
+          var p = video.play();
+          if (p) { p.then(hideLoader).catch(hideLoader); } else hideLoader();
+        });
+        hlsInstance.on(Hls.Events.ERROR, function(e, d) {
+          console.warn('HLS Error:', d.type, d.details);
+          if (d.fatal) {
+            if (d.type === Hls.ErrorTypes.NETWORK_ERROR) try { hlsInstance.startLoad(); } catch(e){}
+            else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) try { hlsInstance.recoverMediaError(); } catch(e){}
+            else try { hlsInstance.destroy(); } catch(e){}
+          }
+        });
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = currentBlobUrl;
+        video.addEventListener('loadedmetadata', function() {
+          var p = video.play();
+          if (p) { p.then(hideLoader).catch(hideLoader); } else hideLoader();
+        });
+      } else {
+        document.body.innerHTML = '<div style="color:#fff;background:#000;height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;font-size:18px;padding:20px;">BROWSER NOT SUPPORTED - Use Chrome</div>';
+      }
+    } catch (err) {
+      console.error('Stream load error:', err.message);
+      hideLoader();
     }
   }
 
@@ -106,14 +178,17 @@
     var dd = String(local.getDate()).padStart(2, '0');
     return y + '-' + m + '-' + dd;
   }
+
   function nowUtcMinutes() {
     var d = new Date();
     return d.getUTCHours() * 60 + d.getUTCMinutes();
   }
+
   function timeToMin(t) {
     var p = t.split(':');
     return parseInt(p[0], 10) * 60 + parseInt(p[1], 10);
   }
+
   function getTeam(data, name) {
     return (data.teams && data.teams[name]) || { code: name.substring(0, 2).toUpperCase(), flag: '🏳️' };
   }
@@ -138,7 +213,7 @@
     return e;
   }
 
-  // === RENDER: LIVE MATCH ===
+  // === RENDER FUNCTIONS ===
   function renderLiveMatch(data, match) {
     var container = document.getElementById('fifa-live-match-container');
     if (!container) return;
@@ -160,7 +235,7 @@
     var timeStr = match.minute ? match.minute + ' min' : match.localTime + ' (BST)';
 
     container.appendChild(el('div', { class: 'fifa-match-header' }, [
-      el('div', { class: 'fifa-live-badge' }, ['🔴 LIVE NOW']),
+      el('div', { class: 'fifa-live-badge' }, ['LIVE NOW']),
       el('div', { style: 'color:#9a9ab0;font-size:13px;font-weight:600;letter-spacing:1px;' }, [headerText])
     ]));
     container.appendChild(el('div', { class: 'fifa-match-info' }, [
@@ -185,7 +260,6 @@
     ]));
   }
 
-  // === RENDER: TODAY'S MATCHES ===
   function renderTodaysMatches(data, todayMatches, liveMatchId) {
     var container = document.getElementById('fifa-today-matches-container');
     if (!container) return;
@@ -193,9 +267,9 @@
 
     if (!todayMatches || todayMatches.length === 0) {
       container.appendChild(el('div', { style: 'grid-column:1/-1;text-align:center;color:#9a9ab0;padding:30px;font-size:14px;' }, [
-        'No FIFA World Cup 2026 matches scheduled for today in your timezone.',
+        'No FIFA World Cup 2026 matches today.',
         el('br'),
-        el('small', null, ['Tournament runs June 11 - July 19, 2026. Check back tomorrow!'])
+        el('small', null, ['Tournament runs June 11 - July 19, 2026'])
       ]));
       return;
     }
@@ -207,14 +281,14 @@
       var awayInfo = getTeam(data, m.away);
       var statusClass = isLive ? 'live' : 'upcoming';
       var tagClass = isLive ? 'fifa-tag-live' : 'fifa-tag-upcoming';
-      var tagText = isLive ? '🔴 LIVE' : (m.localTime + ' BST');
+      var tagText = isLive ? 'LIVE' : (m.localTime + ' BST');
 
       var card = el('div', { class: 'fifa-match-card ' + statusClass }, [
-        el('div', { class: 'fifa-league' }, ['Group ' + m.group + ' • ' + m.venue]),
+        el('div', { class: 'fifa-league' }, ['Group ' + m.group + ' - ' + m.venue]),
         el('div', { class: 'fifa-teams-row' }, [
-          el('div', { class: 'fifa-card-team' }, [(homeInfo.flag || '🏳️') + ' ' + m.home + ' (' + homeInfo.code + ')']),
+          el('div', { class: 'fifa-card-team' }, [(homeInfo.flag || '') + ' ' + m.home + ' (' + homeInfo.code + ')']),
           el('div', { class: 'fifa-card-vs' }, ['VS']),
-          el('div', { class: 'fifa-card-team' }, [m.away + ' (' + awayInfo.code + ') ' + (awayInfo.flag || '🏳️')])
+          el('div', { class: 'fifa-card-team' }, [m.away + ' (' + awayInfo.code + ') ' + (awayInfo.flag || '')])
         ]),
         el('div', { class: 'fifa-card-meta' }, [
           el('span', { class: tagClass }, [tagText]),
@@ -253,7 +327,7 @@
     var container = document.getElementById('fifa-ticker-track');
     if (!container) return;
     container.innerHTML = '';
-    var items = tickerItems || ['FIFA World Cup 2026', 'Watch live on FIFA Live HD'];
+    var items = tickerItems || ['FIFA World Cup 2026'];
     for (var i = 0; i < items.length; i++) {
       var span = el('span', null, []);
       if (items[i].indexOf('LIVE') === 0 || items[i].indexOf('GOAL') === 0) {
@@ -286,16 +360,11 @@
     });
   }
 
-  // === DETECT LIVE MATCH ===
   function determineLiveMatch(data) {
     if (data.liveStream && data.liveStream.matchId) {
       var manual = (data.matches || []).filter(function(m){ return m.id === data.liveStream.matchId; })[0];
-      if (manual) {
-        manual.status = 'live';
-        return manual;
-      }
+      if (manual) { manual.status = 'live'; return manual; }
     }
-
     var now = nowUtcMinutes();
     var allMatches = data.matches || [];
     for (var i = 0; i < allMatches.length; i++) {
@@ -316,46 +385,40 @@
     var items = [];
     var now = nowUtcMinutes();
     var today = todayLocalStr();
-
-    items.push('FIFA World Cup 2026 - Tournament June 11 to July 19');
-
+    items.push('FIFA World Cup 2026 - June 11 to July 19');
     if (todayMatches.length > 0) {
-      items.push('TODAY (' + today + '): ' + todayMatches.length + ' WC matches scheduled');
+      items.push('TODAY: ' + todayMatches.length + ' WC matches');
     }
-
     todayMatches.forEach(function(m){
-      var homeInfo = getTeam(data, m.home);
-      var awayInfo = getTeam(data, m.away);
       if (m.id === (liveMatch ? liveMatch.id : -1)) {
-        items.push('🔴 LIVE NOW: ' + m.home + ' vs ' + m.away + ' (' + m.localTime + ' BST)');
+        items.push('LIVE NOW: ' + m.home + ' vs ' + m.away + ' (' + m.localTime + ' BST)');
       } else {
         var matchTime = timeToMin(m.utcTime);
         var diffMin = matchTime - now;
         if (diffMin > 60) {
-          items.push('⏰ TODAY ' + m.localTime + ' BST: ' + m.home + ' vs ' + m.away);
+          items.push('UPCOMING: ' + m.home + ' vs ' + m.away + ' at ' + m.localTime + ' BST');
         } else if (diffMin > 0) {
-          items.push('⏰ Starting in ' + diffMin + ' min: ' + m.home + ' vs ' + m.away);
-        } else {
-          items.push('📺 Earlier today: ' + m.home + ' vs ' + m.away + ' (Watch replay)');
+          items.push('Starting in ' + diffMin + ' min: ' + m.home + ' vs ' + m.away);
         }
       }
     });
-
     return items;
   }
 
-  // === FETCH + REFRESH ===
   function fetchData() {
-    fetch(CONFIG.matchesJsonUrl + '?t=' + Date.now())
-      .then(function(r){ return r.json(); })
+    var url = CONFIG.matchesJsonUrl + '?t=' + Date.now();
+    console.log('Fetching:', url);
+    fetch(url)
+      .then(function(r){ 
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json(); 
+      })
       .then(function(data){
         window._fifaData = data;
         if (data.streams) window._fifaStreams = data.streams;
 
         var today = todayLocalStr();
-
         var todayMatches = (data.matches || []).filter(function(m){ return m.localDate === today; });
-
         todayMatches.sort(function(a, b){ return timeToMin(a.localTime) - timeToMin(b.localTime); });
 
         var liveMatch = determineLiveMatch(data);
@@ -374,10 +437,13 @@
           loadStream(streamNum);
         }
       })
-      .catch(function(err){ console.warn('Failed to load data:', err); });
+      .catch(function(err){
+        console.warn('Data load failed:', err.message);
+      });
   }
 
   function boot() {
+    console.log('FIFA Stream Player booting...');
     setupChannelTabs();
     fetchData();
     setInterval(fetchData, CONFIG.refreshInterval);

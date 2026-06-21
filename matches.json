@@ -139,6 +139,12 @@
     "matchId": null,
     "streamNumber": 1
   },
+  "streams": {
+    "1": "https://live.wxinxi.com/live/86597104_okehlpipbdoz2lujaxkrvv9eylmlbduv.m3u8",
+    "2": "https://live.wxinxi.com/live/86597104_okehlpipbdoz2lujaxkrvv9eylmlbduv.m3u8",
+    "3": "https://live.wxinxi.com/live/86597104_okehlpipbdoz2lujaxkrvv9eylmlbduv.m3u8",
+    "4": "https://live.wxinxi.com/live/86597104_okehlpipbdoz2lujaxkrvv9eylmlbduv.m3u8"
+  },
   "siteStats": {
     "viewersOnline": "24K+",
     "quality": "1080p",

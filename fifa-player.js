@@ -63,7 +63,12 @@
     video.removeAttribute('src');
     video.load();
     if (window.Hls && Hls.isSupported()) {
-      hlsInstance = new Hls({ lowLatencyMode: true, maxBufferLength: 30, enableWorker: true });
+      hlsInstance = new Hls({
+        lowLatencyMode: true,
+        maxBufferLength: 30,
+        enableWorker: true,
+        proxy: 'https://cors-proxy.websolutionsbd-info.workers.dev/?url='
+      });
       hlsInstance.loadSource(url);
       hlsInstance.attachMedia(video);
       hlsInstance.on(Hls.Events.MANIFEST_PARSED, function(){
